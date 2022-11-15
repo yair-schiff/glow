@@ -11,8 +11,14 @@ from tensorflow.contrib.framework.python.ops import add_arg_scope
 '''
 f_loss: function with as input the (x,y,reuse=False), and as output a list/tuple whose first element is the loss.
 '''
+def makeScaleMatrix(num_gen, num_orig, hps):
+        # first 'N' entries have '1/N', next 'M' entries have '-1/M'
+        s1 =  tf.constant(1.0 / hps.n_batch_train, shape = [hps.n_batch_train, 1])
+        s2 = -tf.constant(1.0 / hps.n_batch_train, shape = [hps.n_batch_train, 1])
+        # 50 is batch size but hardcoded
+        return tf.concat([s1, s2], axis=0)
 
-def _mmd_loss1(x, gen_x, sigma = [2, 5, 10, 20, 40, 80]):
+def _mmd_loss1(x, gen_x, hps, sigma = [2, 5, 10, 20, 40, 80]):
         # concatenation of the generated images and images from the dataset
         # first 'N' rows are the generated ones, next 'M' are from the data
         X = tf.concat([gen_x, x], axis=0)
@@ -26,9 +32,9 @@ def _mmd_loss1(x, gen_x, sigma = [2, 5, 10, 20, 40, 80]):
         exponent = XX - 0.5 * X2 - 0.5 * tf.transpose(X2)
         # scaling constants for each of the rows in 'X'
         if x.shape[0]==None:
-          s = makeScaleMatrix(batch_size, batch_size)
+          s = makeScaleMatrix(batch_size, batch_size, hps)
         else:
-          s = makeScaleMatrix(x.shape[0], x.shape[0])
+          s = makeScaleMatrix(x.shape[0], x.shape[0], hps)
         # scaling factors of each of the kernel values, corresponding to the
         # exponent values
         S = tf.matmul(s, tf.transpose(s))
@@ -38,6 +44,7 @@ def _mmd_loss1(x, gen_x, sigma = [2, 5, 10, 20, 40, 80]):
             # kernel values for each combination of the rows in 'X'
             kernel_val = tf.exp(1.0 / sigma[i] * exponent)
             loss += tf.reduce_sum(S * kernel_val)
+        print(loss)
         return tf.sqrt(loss)
 
 def abstract_model_xy(sess, hps, feeds, train_iterator, test_iterator, data_init, lr, f_loss):
@@ -135,7 +142,7 @@ def codec_energy(hps):
         for i in range(hps.n_levels):
             z = revnet2d_energy(str(i), z, hps)
             if i < hps.n_levels-1:
-                z, _eps = split2d_energy("pool"+str(i), z, objective=objective)
+                z, _eps = split2d_energy("pool"+str(i), z)
                 eps.append(_eps)
         return z, eps
 
@@ -143,7 +150,7 @@ def codec_energy(hps):
         for i in reversed(range(hps.n_levels)):
             if i < hps.n_levels-1:
                 z = split2d_reverse_energy("pool"+str(i), z, eps=eps[i], eps_std=eps_std)
-            z, _ = revnet2d_energy(str(i), z, 0, hps, reverse=True)
+            z, _ = revnet2d_energy(str(i), z, hps, reverse=True)
 
         return z
 
@@ -153,7 +160,6 @@ def prior(name, y_onehot, hps):
 
     with tf.variable_scope(name):
         n_z = hps.top_shape[-1]
-
         h = tf.zeros([tf.shape(y_onehot)[0]]+hps.top_shape[:2]+[2*n_z])
         if hps.learntop:
             h = Z.conv2d_zeros('p', h, 2*n_z)
@@ -161,6 +167,8 @@ def prior(name, y_onehot, hps):
             h += tf.reshape(Z.linear_zeros("y_emb", y_onehot,
                                            2*n_z), [-1, 1, 1, 2 * n_z])
 
+        print("h shape")
+        print(h.get_shape())
         pz = Z.gaussian_diag(h[:, :, :, :n_z], h[:, :, :, n_z:])
 
     def logp(z1):
@@ -185,7 +193,6 @@ def prior(name, y_onehot, hps):
 
     return logp, sample, eps
 
-
 def model(sess, hps, train_iterator, test_iterator, data_init):
 
     # Only for decoding/init, rest use iterators directly
@@ -195,8 +202,19 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
         Y = tf.placeholder(tf.int32, [None], name='label')
         lr = tf.placeholder(tf.float32, None, name='learning_rate')
 
-    encoder, decoder = codec(hps) if hps.energy_distance else codec_energy(hps)
+    encoder, decoder = codec_energy(hps) if hps.energy_distance else codec(hps)
     hps.n_bins = 2. ** hps.n_bits_x
+    flatten_layer = tf.layers.Flatten()
+    # === Sampling function
+    def f_sample2(y, eps_std):
+        print("y shapes")
+        y_onehot = tf.cast(tf.one_hot(y, hps.n_y, 1, 0), 'float32')
+        print(y.get_shape())
+        _, sample, _ = prior("prior", y_onehot, hps)
+        z = sample(eps_std=eps_std)
+        z = decoder(z, eps=[None]*hps.n_levels, eps_std=eps_std)
+        z = Z.unsqueeze2d(z, 2)  # 8x8x12 -> 16x16x3
+        return z
 
     def preprocess(x):
         x = tf.cast(x, 'float32')
@@ -208,17 +226,18 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
     def postprocess(x):
         return tf.cast(tf.clip_by_value(tf.floor((x + .5)*hps.n_bins)*(256./hps.n_bins), 0, 255), 'uint8')
 
-    def _f_loss_energy(x, is_training, reuse=False):
+    def _f_loss_energy(x, y, is_training, reuse=False):
 
         with tf.variable_scope('model', reuse=reuse):
             # Discrete -> Continuous
-            z = tf.random.normal(tf.shape(x), dtype='float32')
+            z = Z.squeeze2d(preprocess(x), 2)
 
-            # Encode
-            z = Z.squeeze2d(z, 2)  # > 16x16x12
-            z = encoder(z)
-            return _mmd_loss1(z, x)
-
+            hps.top_shape = Z.int_shape(z)[1:]
+            print(y.get_shape()[0])
+            eps = tf.random.uniform(shape = [hps.n_batch_train])
+            samples = f_sample2(y, eps_std = eps)
+            loss = 1#_mmd_loss1(samples, z, hps = hps)
+        return loss
 
     def _f_loss(x, y, is_training, reuse=False):
 
@@ -234,7 +253,6 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
             # Encode
             z = Z.squeeze2d(z, 2)  # > 16x16x12
             z, objective, _ = encoder(z, objective)
-
             # Prior
             hps.top_shape = Z.int_shape(z)[1:]
             logp, _, _ = prior("prior", y_onehot, hps)
@@ -270,7 +288,7 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
         else:
             x, y = X, Y
         if hps.energy_distance:
-            return tf.reduce_mean(_f_loss_energy(x, is_training, reuse)), 0
+            return tf.reduce_mean(_f_loss_energy(x, y, is_training, reuse)), 0
         else:
             bits_x, bits_y, pred_loss = _f_loss(x, y, is_training, reuse)
             local_loss = bits_x + hps.weight_y * bits_y
@@ -443,7 +461,7 @@ def revnet2d_step_energy(name, z, hps, reverse):
             elif hps.flow_permutation == 1:
                 z = Z.shuffle_features("shuffle", z)
             elif hps.flow_permutation == 2:
-                z, logdet = invertible_1x1_conv("invconv", z, logdet = None)
+                z = invertible_1x1_conv_energy("invconv", z)
             else:
                 raise Exception()
 
@@ -459,7 +477,6 @@ def revnet2d_step_energy(name, z, hps, reverse):
                 scale = tf.nn.sigmoid(h[:, :, :, 1::2] + 2.)
                 z2 += shift
                 z2 *= scale
-                logdet += tf.reduce_sum(tf.log(scale), axis=[1, 2, 3])
             else:
                 raise Exception()
 
@@ -479,7 +496,6 @@ def revnet2d_step_energy(name, z, hps, reverse):
                 scale = tf.nn.sigmoid(h[:, :, :, 1::2] + 2.)
                 z2 /= scale
                 z2 -= shift
-                logdet -= tf.reduce_sum(tf.log(scale), axis=[1, 2, 3])
             else:
                 raise Exception()
 
@@ -490,14 +506,14 @@ def revnet2d_step_energy(name, z, hps, reverse):
             elif hps.flow_permutation == 1:
                 z = Z.shuffle_features("shuffle", z, reverse=True)
             elif hps.flow_permutation == 2:
-                z = invertible_1x1_conv(
-                    "invconv", z, logdet = None, reverse=True)
+                z = invertible_1x1_conv_energy(
+                    "invconv", z, reverse=True)
             else:
                 raise Exception()
 
-            z, logdet = Z.actnorm("actnorm", z, reverse=True)
+            z = Z.actnorm("actnorm", z, reverse=True)
 
-    return z, logdet
+    return z
 
 # Simpler, new version
 @add_arg_scope

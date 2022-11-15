@@ -94,7 +94,7 @@ def get_data(hps, sess):
     s = hps.anchor_size
     hps.local_batch_train = hps.n_batch_train * \
         s * s // (hps.image_size * hps.image_size)
-    hps.local_batch_test = {64: 50, 32: 25, 16: 10, 8: 5, 4: 2, 2: 2, 1: 1}[
+    hps.local_batch_test = {64: 50, 50:50, 32: 25, 16: 10, 8: 5, 4: 2, 2: 2, 1: 1}[
         hps.local_batch_train]  # round down to closest divisor of 50
     hps.local_batch_init = hps.n_batch_init * \
         s * s // (hps.image_size * hps.image_size)
@@ -356,7 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_test", type=int, default=-
                         1, help="Valid epoch size")
     parser.add_argument("--n_batch_train", type=int,
-                        default=64, help="Minibatch size")
+                        default=50, help="Minibatch size")
     parser.add_argument("--n_batch_test", type=int,
                         default=50, help="Minibatch size")
     parser.add_argument("--n_batch_init", type=int, default=256,
