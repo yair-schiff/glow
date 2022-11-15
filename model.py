@@ -1,3 +1,4 @@
+import os
 import tensorflow as tf
 
 import tfops as Z
@@ -93,7 +94,7 @@ def abstract_model_xy(sess, hps, feeds, train_iterator, test_iterator, data_init
     m.restore = lambda path: saver.restore(sess, path)
 
     # === Initialize the parameters
-    if hps.restore_path != '':
+    if hps.restore_path != '' and os.path.exists(hps.restore_path):
         m.restore(hps.restore_path)
     else:
         with Z.arg_scope([Z.get_variable_ddi, Z.actnorm], init=True):

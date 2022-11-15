@@ -11,6 +11,7 @@ import numpy as np
 import tensorflow as tf
 import graphics
 from utils import ResultLogger
+from tqdm import tqdm
 
 learn = tf.contrib.learn
 
@@ -215,7 +216,7 @@ def train(sess, model, hps, logdir, visualise):
         t = time.time()
 
         train_results = []
-        for it in range(hps.train_its):
+        for it in tqdm(range(hps.train_its), desc=f'Epoch: {epoch}'):
 
             # Set learning rate, linearly annealed from 0 in the first hps.epochs_warmup epochs.
             lr = hps.lr * min(1., n_processed /
@@ -243,11 +244,12 @@ def train(sess, model, hps, logdir, visualise):
             train_logger.log(epoch=epoch, n_processed=n_processed, n_images=n_images, train_time=int(
                 train_time), **process_results(train_results))
 
-        if epoch < 10 or (epoch < 50 and epoch % 10 == 0) or epoch % hps.epochs_full_valid == 0:
+        if epoch < 10 or epoch % hps.epochs_full_valid == 0:
             test_results = []
             msg = ''
 
             t = time.time()
+            model.save(logdir + "model_latest.ckpt")
             # model.polyak_swap()
 
             if epoch % hps.epochs_full_valid == 0:
