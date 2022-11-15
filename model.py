@@ -148,9 +148,10 @@ def codec_energy(hps):
 
     def decoder(z, eps=[None]*hps.n_levels, eps_std=None):
         for i in reversed(range(hps.n_levels)):
+            print(z.get_shape())
             if i < hps.n_levels-1:
                 z = split2d_reverse_energy("pool"+str(i), z, eps=eps[i], eps_std=eps_std)
-            z, _ = revnet2d_energy(str(i), z, hps, reverse=True)
+            z  = revnet2d_energy(str(i), z, hps, reverse=True)
 
         return z
 
@@ -167,8 +168,6 @@ def prior(name, y_onehot, hps):
             h += tf.reshape(Z.linear_zeros("y_emb", y_onehot,
                                            2*n_z), [-1, 1, 1, 2 * n_z])
 
-        print("h shape")
-        print(h.get_shape())
         pz = Z.gaussian_diag(h[:, :, :, :n_z], h[:, :, :, n_z:])
 
     def logp(z1):
@@ -207,13 +206,10 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
     flatten_layer = tf.layers.Flatten()
     # === Sampling function
     def f_sample2(y, eps_std):
-        print("y shapes")
         y_onehot = tf.cast(tf.one_hot(y, hps.n_y, 1, 0), 'float32')
-        print(y.get_shape())
         _, sample, _ = prior("prior", y_onehot, hps)
         z = sample(eps_std=eps_std)
         z = decoder(z, eps=[None]*hps.n_levels, eps_std=eps_std)
-        z = Z.unsqueeze2d(z, 2)  # 8x8x12 -> 16x16x3
         return z
 
     def preprocess(x):
@@ -222,7 +218,6 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
             x = tf.floor(x / 2 ** (8 - hps.n_bits_x))
         x = x / hps.n_bins - .5
         return x
-
     def postprocess(x):
         return tf.cast(tf.clip_by_value(tf.floor((x + .5)*hps.n_bins)*(256./hps.n_bins), 0, 255), 'uint8')
 
@@ -230,13 +225,13 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
 
         with tf.variable_scope('model', reuse=reuse):
             # Discrete -> Continuous
+            
             z = Z.squeeze2d(preprocess(x), 2)
 
-            hps.top_shape = Z.int_shape(z)[1:]
-            print(y.get_shape()[0])
+            hps.top_shape = [4, 4, 48]
             eps = tf.random.uniform(shape = [hps.n_batch_train])
             samples = f_sample2(y, eps_std = eps)
-            loss = 1#_mmd_loss1(samples, z, hps = hps)
+            loss = _mmd_loss1(flatten_layer(z), flatten_layer(samples), hps = hps)
         return loss
 
     def _f_loss(x, y, is_training, reuse=False):
@@ -288,7 +283,8 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
         else:
             x, y = X, Y
         if hps.energy_distance:
-            return tf.reduce_mean(_f_loss_energy(x, y, is_training, reuse)), 0
+            loss = tf.reduce_mean(_f_loss_energy(x, y, is_training, reuse)), 
+            return loss, loss 
         else:
             bits_x, bits_y, pred_loss = _f_loss(x, y, is_training, reuse)
             local_loss = bits_x + hps.weight_y * bits_y

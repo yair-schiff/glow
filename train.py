@@ -216,23 +216,24 @@ def train(sess, model, hps, logdir, visualise):
         t = time.time()
 
         train_results = []
-        for it in tqdm(range(hps.train_its), desc=f'Epoch: {epoch}'):
-
-            # Set learning rate, linearly annealed from 0 in the first hps.epochs_warmup epochs.
-            lr = hps.lr * min(1., n_processed /
+        with tqdm(range(hps.train_its), desc=f'Epoch: {epoch}') as tepoch:
+            for it in tepoch:
+                # Set learning rate, linearly annealed from 0 in the first hps.epochs_warmup epochs.
+                lr = hps.lr * min(1., n_processed /
                               (hps.n_train * hps.epochs_warmup))
 
-            # Run a training step synchronously.
-            _t = time.time()
-            train_results += [model.train(lr)]
-            if hps.verbose and hvd.rank() == 0:
-                _print(n_processed, time.time()-_t, train_results[-1])
-                sys.stdout.flush()
+                # Run a training step synchronously.
+                _t = time.time()
+                train_results += [model.train(lr)]
+                tepoch.set_postfix(loss=train_results[-1][0])
+                if hps.verbose and hvd.rank() == 0:
+                    _print(n_processed, time.time()-_t, train_results[-1])
+                    sys.stdout.flush()
 
-            # Images seen wrt anchor resolution
-            n_processed += hvd.size() * hps.n_batch_train
-            # Actual images seen at current resolution
-            n_images += hvd.size() * hps.local_batch_train
+                # Images seen wrt anchor resolution
+                n_processed += hvd.size() * hps.n_batch_train
+                # Actual images seen at current resolution
+                n_images += hvd.size() * hps.local_batch_train
 
         train_results = np.mean(np.asarray(train_results), axis=0)
 
@@ -240,7 +241,7 @@ def train(sess, model, hps, logdir, visualise):
         ips = (hps.train_its * hvd.size() * hps.local_batch_train) / dtrain
         train_time += dtrain
 
-        if hvd.rank() == 0:
+        if hvd.rank() == 0 and not hps.energy_distance:
             train_logger.log(epoch=epoch, n_processed=n_processed, n_images=n_images, train_time=int(
                 train_time), **process_results(train_results))
 
@@ -258,7 +259,7 @@ def train(sess, model, hps, logdir, visualise):
                     test_results += [model.test()]
                 test_results = np.mean(np.asarray(test_results), axis=0)
 
-                if hvd.rank() == 0:
+                if hvd.rank() == 0 and not hps.energy_distance:
                     test_logger.log(epoch=epoch, n_processed=n_processed,
                                     n_images=n_images, **process_results(test_results))
 
@@ -359,7 +360,7 @@ if __name__ == "__main__":
                         default=50, help="Minibatch size")
     parser.add_argument("--n_batch_test", type=int,
                         default=50, help="Minibatch size")
-    parser.add_argument("--n_batch_init", type=int, default=256,
+    parser.add_argument("--n_batch_init", type=int, default=50,
                         help="Minibatch size for data-dependent init")
     parser.add_argument("--optimizer", type=str,
                         default="adamax", help="adam or adamax")
