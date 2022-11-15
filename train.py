@@ -376,7 +376,7 @@ if __name__ == "__main__":
                         default=50, help="Epochs between valid")
     parser.add_argument("--gradient_checkpointing", type=int,
                         default=1, help="Use memory saving gradients")
-
+    parser.add_argument('--energy_distance', dest='energy_distance', action='store_true', help='use energy distance in place of likelihood')
     # Model hyperparams:
     parser.add_argument("--image_size", type=int,
                         default=-1, help="Image size")
