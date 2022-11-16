@@ -3,7 +3,7 @@
 #SBATCH
 #SBATCH --mail-type=END                      # Request status by email
 #SBATCH --mail-user=yzs2@cornell.edu         # Email address to send results to.
-#SBATCH --job-name=glow_cifar10              # Job name
+#SBATCH --job-name=glow_mnist                # Job name
 #SBATCH --output=%x_%j.out                   # Output file: %x is job name, %j is job id
 #SBATCH --error=%x_%j.err                    # Error file: %x is job name, %j is job id
 #SBATCH -N 1                                 # Total number of nodes requested
@@ -23,16 +23,17 @@ source "${CONDA_SHELL}"
 conda activate glow_v2
 
 mpiexec -n 8 python train.py \
-  --problem cifar10 \
+  --problem mnist \
   --image_size 32 \
-  --n_level 3 \
+  --n_level 2 \
   --depth 2 \
   --flow_permutation 2 \
   --flow_coupling 1 \
   --seed 0 \
   --lr 0.001 \
   --gradient_checkpointing 0 \
-  --epochs_full_valid 1 \
-  --logdir ./logs \
-  --restore_path ./logs/model_latest.ckpt
+  --epochs_full_valid 10 \
+  --epochs 100 \
+  --logdir ./mnist_logs \
+  --restore_path ./mnist_logs/model_latest.ckpt
 conda deactivate
