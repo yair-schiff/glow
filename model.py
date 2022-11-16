@@ -67,13 +67,15 @@ def abstract_model_xy(sess, hps, feeds, train_iterator, test_iterator, data_init
     m.restore = lambda path: saver.restore(sess, path)
 
     # === Initialize the parameters
+    restored = False
     if hps.restore_path != '':
         # Assumes that restore path is under logdir
         for filename in os.listdir(hps.logdir):
             if hps.restore_path.split('/')[-1] in filename:
                 m.restore(hps.restore_path)
+                restored = True
                 break
-    else:
+    if not restored:
         with Z.arg_scope([Z.get_variable_ddi, Z.actnorm], init=True):
             results_init = f_loss(None, True, reuse=True)
         sess.run(tf.global_variables_initializer())
