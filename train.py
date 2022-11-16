@@ -24,7 +24,7 @@ def _print(*args, **kwargs):
         print(*args, **kwargs)
 
 
-def init_visualizations(hps, model, logdir):
+def init_visualizations(hps, model, logdir, timestamp):
 
     def sample_batch(y, eps):
         n_batch = hps.local_batch_train
@@ -62,7 +62,7 @@ def init_visualizations(hps, model, logdir):
             x_sample = np.reshape(
                 x_samples[i], (n_batch, hps.image_size, hps.image_size, 3))
             graphics.save_raster(x_sample, logdir +
-                                 'epoch_{}_sample_{}.png'.format(epoch, i))
+                                 '{}_epoch_sample_{}_{}.png'.format(timestamp, epoch, i))
 
     return draw_samples
 
@@ -151,17 +151,17 @@ def main(hps):
     logdir = os.path.abspath(hps.logdir) + "/"
     if not os.path.exists(logdir):
         os.mkdir(logdir)
-
+    timestr = time.strftime("%Y%m%d-%H%M%S")
     # Create model
     import model
     model = model.model(sess, hps, train_iterator, test_iterator, data_init)
 
     # Initialize visualization functions
-    visualise = init_visualizations(hps, model, logdir)
+    visualise = init_visualizations(hps, model, logdir, timestamp=timestr)
 
     if not hps.inference:
         # Perform training
-        train(sess, model, hps, logdir, visualise)
+        train(sess, model, hps, logdir, visualise, timestamp=timestr)
     else:
         infer(sess, model, hps, test_iterator)
 
@@ -194,7 +194,7 @@ def infer(sess, model, hps, iterator):
     return zs
 
 
-def train(sess, model, hps, logdir, visualise):
+def train(sess, model, hps, logdir, visualise, timestamp):
     _print(hps)
     _print('Starting training. Logging to', logdir)
     _print('epoch n_processed n_images ips dtrain dtest dsample dtot train_results test_results msg')
@@ -207,8 +207,8 @@ def train(sess, model, hps, logdir, visualise):
     test_loss_best = 999999
 
     if hvd.rank() == 0:
-        train_logger = ResultLogger(logdir + "train.txt", **hps.__dict__)
-        test_logger = ResultLogger(logdir + "test.txt", **hps.__dict__)
+        train_logger = ResultLogger(logdir + f"train_{timestamp}.txt", **hps.__dict__)
+        test_logger = ResultLogger(logdir + f"test_{timestamp}.txt", **hps.__dict__)
 
     tcurr = time.time()
     for epoch in range(1, hps.epochs):
