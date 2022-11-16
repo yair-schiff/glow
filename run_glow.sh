@@ -32,8 +32,8 @@ mpiexec -n 8 python train.py \
   --seed 0 \
   --lr 0.001 \
   --gradient_checkpointing 0 \
-  --epochs_full_valid 10 \
-  --epochs 100 \
+  --epochs_full_valid 1 \
+  --epochs 500 \
   --logdir ./mnist_logs \
   --restore_path ./mnist_logs/model_latest.ckpt
 conda deactivate
