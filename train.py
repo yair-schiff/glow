@@ -94,7 +94,7 @@ def get_data(hps, sess):
     s = hps.anchor_size
     hps.local_batch_train = hps.n_batch_train * \
         s * s // (hps.image_size * hps.image_size)
-    hps.local_batch_test = {64: 50, 32: 25, 16: 10, 8: 5, 4: 2, 2: 2, 1: 1}[
+    hps.local_batch_test = {64: 50, 50:50, 32: 25, 16: 10, 8: 5, 4: 2, 2: 2, 1: 1}[
         hps.local_batch_train]  # round down to closest divisor of 50
     hps.local_batch_init = hps.n_batch_init * \
         s * s // (hps.image_size * hps.image_size)
@@ -216,23 +216,24 @@ def train(sess, model, hps, logdir, visualise, timestamp):
         t = time.time()
 
         train_results = []
-        for it in tqdm(range(hps.train_its), desc=f'Epoch: {epoch}'):
-
-            # Set learning rate, linearly annealed from 0 in the first hps.epochs_warmup epochs.
-            lr = hps.lr * min(1., n_processed /
+        with tqdm(range(hps.train_its), desc=f'Epoch: {epoch}') as tepoch:
+            for it in tepoch:
+                # Set learning rate, linearly annealed from 0 in the first hps.epochs_warmup epochs.
+                lr = hps.lr * min(1., n_processed /
                               (hps.n_train * hps.epochs_warmup))
 
-            # Run a training step synchronously.
-            _t = time.time()
-            train_results += [model.train(lr)]
-            if hps.verbose and hvd.rank() == 0:
-                _print(n_processed, time.time()-_t, train_results[-1])
-                sys.stdout.flush()
+                # Run a training step synchronously.
+                _t = time.time()
+                train_results += [model.train(lr)]
+                tepoch.set_postfix(loss=train_results[-1][0])
+                if hps.verbose and hvd.rank() == 0:
+                    _print(n_processed, time.time()-_t, train_results[-1])
+                    sys.stdout.flush()
 
-            # Images seen wrt anchor resolution
-            n_processed += hvd.size() * hps.n_batch_train
-            # Actual images seen at current resolution
-            n_images += hvd.size() * hps.local_batch_train
+                # Images seen wrt anchor resolution
+                n_processed += hvd.size() * hps.n_batch_train
+                # Actual images seen at current resolution
+                n_images += hvd.size() * hps.local_batch_train
 
         train_results = np.mean(np.asarray(train_results), axis=0)
 
@@ -240,7 +241,7 @@ def train(sess, model, hps, logdir, visualise, timestamp):
         ips = (hps.train_its * hvd.size() * hps.local_batch_train) / dtrain
         train_time += dtrain
 
-        if hvd.rank() == 0:
+        if hvd.rank() == 0 and not hps.energy_distance:
             train_logger.log(epoch=epoch, n_processed=n_processed, n_images=n_images, train_time=int(
                 train_time), **process_results(train_results))
 
@@ -258,7 +259,7 @@ def train(sess, model, hps, logdir, visualise, timestamp):
                     test_results += [model.test()]
                 test_results = np.mean(np.asarray(test_results), axis=0)
 
-                if hvd.rank() == 0:
+                if hvd.rank() == 0 and not hps.energy_distance:
                     test_logger.log(epoch=epoch, n_processed=n_processed,
                                     n_images=n_images, **process_results(test_results))
 
@@ -356,10 +357,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_test", type=int, default=-
                         1, help="Valid epoch size")
     parser.add_argument("--n_batch_train", type=int,
-                        default=64, help="Minibatch size")
+                        default=50, help="Minibatch size")
     parser.add_argument("--n_batch_test", type=int,
                         default=50, help="Minibatch size")
-    parser.add_argument("--n_batch_init", type=int, default=256,
+    parser.add_argument("--n_batch_init", type=int, default=50,
                         help="Minibatch size for data-dependent init")
     parser.add_argument("--optimizer", type=str,
                         default="adamax", help="adam or adamax")
@@ -378,7 +379,7 @@ if __name__ == "__main__":
                         default=50, help="Epochs between valid")
     parser.add_argument("--gradient_checkpointing", type=int,
                         default=1, help="Use memory saving gradients")
-
+    parser.add_argument('--energy_distance', dest='energy_distance', action='store_true', help='use energy distance in place of likelihood')
     # Model hyperparams:
     parser.add_argument("--image_size", type=int,
                         default=-1, help="Image size")
