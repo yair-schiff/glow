@@ -44,7 +44,6 @@ def _mmd_loss1(x, gen_x, hps, sigma = [2, 5, 10, 20, 40, 80]):
             # kernel values for each combination of the rows in 'X'
             kernel_val = tf.exp(1.0 / sigma[i] * exponent)
             loss += tf.reduce_sum(S * kernel_val)
-        print(loss)
         return tf.sqrt(loss)
 
 def abstract_model_xy(sess, hps, feeds, train_iterator, test_iterator, data_init, lr, f_loss):
@@ -99,9 +98,12 @@ def abstract_model_xy(sess, hps, feeds, train_iterator, test_iterator, data_init
         sess, path, write_meta_graph=False)
     m.save = lambda path: saver.save(sess, path, write_meta_graph=False)
     m.restore = lambda path: saver.restore(sess, path)
-
+    print("attempting restore")
+    print(hps.restore_path+".index")
+    print(os.path.exists(hps.restore_path+".index"))
     # === Initialize the parameters
-    if hps.restore_path != '' and os.path.exists(hps.restore_path):
+    if hps.restore_path != '' and os.path.exists(hps.restore_path+".index"):
+        print("restoring path")
         m.restore(hps.restore_path)
     else:
         with Z.arg_scope([Z.get_variable_ddi, Z.actnorm], init=True):
@@ -229,7 +231,7 @@ def model(sess, hps, train_iterator, test_iterator, data_init):
             z = Z.squeeze2d(preprocess(x), 2)
 
             hps.top_shape = [4, 4, 48]
-            eps = tf.random.uniform(shape = [hps.n_batch_train])
+            eps = tf.random.normal(shape = [hps.n_batch_train])
             samples = f_sample2(y, eps_std = eps)
             loss = _mmd_loss1(flatten_layer(z), flatten_layer(samples), hps = hps)
         return loss
@@ -729,16 +731,14 @@ def invertible_1x1_conv_energy(name, z, reverse=False):
 
 
             if not reverse:
-
-                _w = tf.reshape(w, [1, 1] + w_shape)
+                _w = tf.matrix_inverse(w)
+                _w = tf.reshape(_w, [1, 1] + w_shape)
                 z = tf.nn.conv2d(z, _w, [1, 1, 1, 1],
                                  'SAME', data_format='NHWC')
 
                 return z
             else:
-
-                _w = tf.matrix_inverse(w)
-                _w = tf.reshape(_w, [1, 1]+w_shape)
+                _w = tf.reshape(w, [1, 1]+w_shape)
                 z = tf.nn.conv2d(z, _w, [1, 1, 1, 1],
                                  'SAME', data_format='NHWC')
 

@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/ps789/glow/logs/model_latest.ckpt"
+all_model_checkpoint_paths: "/home/ps789/glow/logs/model_latest.ckpt"

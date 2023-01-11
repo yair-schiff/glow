@@ -1,0 +1,3 @@
+model_checkpoint_path: "/share/kuleshov/yzs2/glow/mnist_logs/model_best_loss.ckpt"
+all_model_checkpoint_paths: "/share/kuleshov/yzs2/glow/mnist_logs/model_latest.ckpt"
+all_model_checkpoint_paths: "/share/kuleshov/yzs2/glow/mnist_logs/model_best_loss.ckpt"

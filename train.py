@@ -363,7 +363,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_batch_init", type=int, default=50,
                         help="Minibatch size for data-dependent init")
     parser.add_argument("--optimizer", type=str,
-                        default="adamax", help="adam or adamax")
+                        default="adam", help="adam or adamax")
     parser.add_argument("--lr", type=float, default=0.001,
                         help="Base learning rate")
     parser.add_argument("--beta1", type=float, default=.9, help="Adam beta1")
